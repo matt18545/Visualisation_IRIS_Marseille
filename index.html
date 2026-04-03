@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marseille — Population IRIS · 2016–2022</title>
+<script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=JetBrains+Mono:wght@400;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:#08080d;color:#e0e0e8;overflow:hidden;height:100vh}
+#map{position:absolute;inset:0;z-index:0}
+
+#panel{
+  position:absolute;top:14px;left:14px;z-index:10;width:340px;
+  background:rgba(8,8,14,0.92);backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.06);border-radius:16px;
+  padding:20px 18px 16px;box-shadow:0 16px 56px rgba(0,0,0,0.6);
+  max-height:calc(100vh - 28px);overflow-y:auto;
+}
+#panel::-webkit-scrollbar{width:4px}
+#panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+#panel h1{font-size:18px;font-weight:700;letter-spacing:-0.4px;margin-bottom:1px;background:linear-gradient(135deg,#ff6b4a,#ffb83a);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{font-size:10.5px;color:#5a5a70;margin-bottom:16px;font-weight:300}
+
+/* Timeline bar — floating bottom center */
+#timeline{
+  position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:10;
+  display:flex;align-items:center;gap:16px;
+  background:rgba(8,8,14,0.92);backdrop-filter:blur(24px);
+  border:1px solid rgba(255,255,255,0.06);border-radius:14px;
+  padding:12px 24px;box-shadow:0 12px 48px rgba(0,0,0,0.6);
+  width:min(560px, calc(100vw - 40px));
+}
+.tl-year{
+  font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;
+  background:linear-gradient(135deg,#ff6b4a,#ffb83a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  min-width:56px;text-align:center;letter-spacing:-1px;flex-shrink:0;
+}
+.tl-body{flex:1;min-width:0}
+.tl-track{position:relative;height:8px}
+.tl-slider{-webkit-appearance:none;width:100%;height:8px;border-radius:4px;background:rgba(255,255,255,0.06);outline:none;cursor:pointer;position:relative;z-index:2}
+.tl-slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#ff6b4a,#ffb83a);cursor:grab;box-shadow:0 0 14px rgba(255,107,74,0.5),0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.15);transition:transform .1s}
+.tl-slider::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.2)}
+.tl-slider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#ff6b4a,#ffb83a);cursor:grab;box-shadow:0 0 14px rgba(255,107,74,0.5);border:2px solid rgba(255,255,255,0.15)}
+.tl-progress{position:absolute;top:0;left:0;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(255,107,74,0.35),rgba(255,184,58,0.35));pointer-events:none;z-index:1;transition:width .15s}
+.tl-ticks{display:flex;justify-content:space-between;margin-top:14px;padding:0 4px}
+.tl-ticks span{font-family:'JetBrains Mono',monospace;font-size:11px;color:#4a4a60;cursor:pointer;transition:color .2s;user-select:none;padding:2px 4px}
+.tl-ticks span:hover{color:#ffb83a}
+.tl-ticks span.active{color:#ffb83a;font-weight:700;font-size:12px}
+#playBtn{width:36px;height:36px;border-radius:50%;border:1.5px solid rgba(255,107,74,0.35);background:rgba(255,107,74,0.08);color:#ffb83a;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s,border-color .2s,transform .15s;padding:0}
+#playBtn:hover{background:rgba(255,107,74,0.18);border-color:rgba(255,107,74,0.6);transform:scale(1.08)}
+#playBtn svg{display:block;width:14px;height:14px;fill:#ffb83a;transition:opacity .15s}
+.tl-speed{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0}
+.tl-speed-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:#ffb83a;min-width:28px;text-align:center;line-height:1}
+.tl-speed-slider{-webkit-appearance:none;width:64px;height:3px;border-radius:2px;background:rgba(255,255,255,0.08);outline:none;cursor:pointer}
+.tl-speed-slider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:linear-gradient(135deg,#ff6b4a,#ffb83a);cursor:pointer;box-shadow:0 0 6px rgba(255,107,74,0.4)}
+
+/* Mode tabs */
+.mode-tabs{display:flex;gap:4px;margin-bottom:14px;background:rgba(255,255,255,0.03);border-radius:8px;padding:3px}
+.mode-tab{flex:1;padding:7px 0;border:none;border-radius:6px;background:transparent;color:#6a6a80;font-size:10.5px;font-weight:500;text-align:center;cursor:pointer;transition:all .25s;font-family:'DM Sans',sans-serif;letter-spacing:0.3px}
+.mode-tab.active{background:rgba(255,107,74,0.14);color:#ffb83a}
+
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.stat-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:9px 11px}
+.stat-card .label{font-size:9px;text-transform:uppercase;letter-spacing:0.7px;color:#5a5a70;margin-bottom:3px}
+.stat-card .value{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:#f0f0f5}
+.stat-card .value span{font-size:10px;font-weight:400;color:#6a6a80}
+.stat-card .value .up{color:#4ade80}.stat-card .value .down{color:#f87171}
+
+.evo-row{display:flex;gap:6px;margin-bottom:12px}
+.evo-badge{flex:1;text-align:center;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.05)}
+.evo-badge .num{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600}
+.evo-badge .txt{font-size:8px;text-transform:uppercase;letter-spacing:0.5px;color:#5a5a70;margin-top:2px}
+.evo-pos{background:rgba(74,222,128,0.06)}.evo-pos .num{color:#4ade80}
+.evo-neg{background:rgba(248,113,113,0.06)}.evo-neg .num{color:#f87171}
+.evo-eq{background:rgba(255,255,255,0.03)}.evo-eq .num{color:#9a9ab0}
+
+.legend{margin-top:10px}
+.legend .title{font-size:9px;text-transform:uppercase;letter-spacing:0.7px;color:#5a5a70;margin-bottom:6px}
+.legend-bar{height:8px;border-radius:4px;margin-bottom:3px}
+.legend-labels{display:flex;justify-content:space-between;font-size:8px;color:#5a5a70;font-family:'JetBrains Mono',monospace}
+.legend-pop{background:linear-gradient(90deg,#1a0533,#5b1a8a,#c23a6b,#f57d3a,#ffe24a)}
+.legend-diff{background:linear-gradient(90deg,#2563eb,#60a5fa,#e2e8f0,#fca5a5,#dc2626)}
+
+.control-group{margin-top:12px}
+.control-group-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.control-group-header label{font-size:9px;text-transform:uppercase;letter-spacing:0.7px;color:#5a5a70;margin:0}
+.range-value{font-family:'JetBrains Mono',monospace;font-size:10px;color:#ffb83a}
+input[type=range].htSlider{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:rgba(255,255,255,0.08);outline:none;display:block}
+input[type=range].htSlider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:linear-gradient(135deg,#ff6b4a,#ffb83a);cursor:pointer;box-shadow:0 0 8px rgba(255,107,74,0.4)}
+
+.basemap-toggle{margin-top:14px;display:flex;gap:5px}
+.basemap-btn{flex:1;padding:6px 0;border:1px solid rgba(255,255,255,0.06);border-radius:6px;background:rgba(255,255,255,0.02);color:#5a5a70;font-size:9.5px;font-weight:500;text-align:center;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:0.4px}
+.basemap-btn.active{background:rgba(255,107,74,0.1);border-color:rgba(255,107,74,0.25);color:#ffb83a}
+
+.deck-tooltip{font-family:'DM Sans',sans-serif !important;background:rgba(8,8,14,0.93) !important;backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08) !important;border-radius:10px !important;padding:12px 14px !important;box-shadow:0 8px 32px rgba(0,0,0,0.6) !important;color:#e0e0e8 !important;font-size:12px !important;max-width:260px;pointer-events:none}
+.tt-pop{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-bottom:2px}
+.tt-label{font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:#6a6a80}
+.tt-name{font-size:11px;color:#aaa;margin-top:4px}
+.tt-row{display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.06)}
+.tt-year{font-size:9px;color:#6a6a80}.tt-val{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600}
+.tt-diff{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;margin-top:4px}
+.tt-diff.pos{color:#4ade80}.tt-diff.neg{color:#f87171}
+.tt-spark{display:flex;align-items:end;gap:2px;margin-top:6px;height:24px}
+.tt-spark-bar{flex:1;border-radius:1px;min-height:2px}
+
+#loader{position:fixed;inset:0;z-index:999;background:#08080d;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .6s}
+#loader.hide{opacity:0;pointer-events:none}
+.spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.05);border-top-color:#ff6b4a;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loader p{margin-top:12px;font-size:11px;color:#5a5a70}
+.sep{height:1px;background:rgba(255,255,255,0.05);margin:12px 0}
+
+/* ── Device switcher ── */
+#device-bar{position:absolute;top:14px;right:14px;z-index:10;display:flex;gap:5px;background:rgba(8,8,14,0.92);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:5px;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+.dev-btn{width:32px;height:32px;border:none;border-radius:6px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#5a5a70;transition:all .2s;padding:0}
+.dev-btn:hover{background:rgba(255,255,255,0.05);color:#9a9ab0}
+.dev-btn.active{background:rgba(255,107,74,0.14);color:#ffb83a}
+.dev-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── Tablette ── */
+body[data-device="tablet"] #panel{width:265px;padding:16px 14px 12px}
+body[data-device="tablet"] #panel h1{font-size:15px}
+body[data-device="tablet"] .subtitle{font-size:9px}
+body[data-device="tablet"] .stat-card .value{font-size:14px}
+body[data-device="tablet"] .mode-tab{font-size:9.5px;padding:6px 0}
+body[data-device="tablet"] .control-group label{font-size:8px}
+body[data-device="tablet"] #timeline{width:min(440px,calc(100vw - 28px));padding:10px 18px;gap:12px}
+body[data-device="tablet"] .tl-year{font-size:22px;min-width:46px}
+body[data-device="tablet"] .tl-speed-slider{width:52px}
+
+/* ── Téléphone ── */
+/* device bar réduit pour libérer de la place */
+body[data-device="phone"] #device-bar{padding:3px;gap:2px}
+body[data-device="phone"] .dev-btn{width:24px;height:24px}
+body[data-device="phone"] .dev-btn svg{width:12px;height:12px}
+/* panel : s'étire de la gauche jusqu'à la device bar (≈ 90px depuis la droite) */
+body[data-device="phone"] #panel{left:14px;right:94px;width:auto;padding:10px 11px 10px;max-height:none;overflow:hidden}
+body[data-device="phone"] #panel h1{font-size:13px;margin-bottom:1px}
+body[data-device="phone"] .subtitle{display:none}
+body[data-device="phone"] .mode-tabs{margin-bottom:8px}
+body[data-device="phone"] .mode-tab{font-size:9px;padding:5px 0}
+body[data-device="phone"] .stat-grid{grid-template-columns:1fr 1fr;gap:4px;margin-bottom:0}
+body[data-device="phone"] .stat-card{padding:6px 8px}
+body[data-device="phone"] .stat-card .value{font-size:12px}
+body[data-device="phone"] .stat-card .label{font-size:7.5px}
+body[data-device="phone"] .stat-card:nth-child(n+3){display:none}
+body[data-device="phone"] #evo-section{display:none!important}
+body[data-device="phone"] .sep{display:none}
+body[data-device="phone"] .legend{display:none}
+body[data-device="phone"] .control-group{display:none}
+body[data-device="phone"] .basemap-toggle{display:none}
+/* timeline pleine largeur, sans contrôle de vitesse */
+body[data-device="phone"] #timeline{width:calc(100vw - 20px);bottom:12px;padding:8px 10px;gap:8px}
+body[data-device="phone"] .tl-year{font-size:18px;min-width:38px}
+body[data-device="phone"] .tl-ticks{margin-top:10px}
+body[data-device="phone"] .tl-ticks span{font-size:9px;padding:1px 2px}
+body[data-device="phone"] .tl-speed{display:none}
+body[data-device="phone"] #playBtn{width:28px;height:28px}
+body[data-device="phone"] #playBtn svg{width:12px;height:12px}
+
+/* ── Media queries (backup tactile uniquement — ne s'applique pas aux PC) ── */
+@media screen and (max-width:767px) and (pointer:coarse){
+  #device-bar{padding:3px!important;gap:2px!important}
+  .dev-btn{width:24px!important;height:24px!important}
+  .dev-btn svg{width:12px!important;height:12px!important}
+  #panel{left:14px!important;right:94px!important;width:auto!important;padding:10px 11px 10px!important;max-height:none!important;overflow:hidden!important}
+  #panel h1{font-size:13px!important}
+  .subtitle,.sep,.legend,.control-group,.basemap-toggle{display:none!important}
+  .mode-tabs{margin-bottom:8px!important}
+  .mode-tab{font-size:9px!important;padding:5px 0!important}
+  .stat-grid{grid-template-columns:1fr 1fr!important;gap:4px!important;margin-bottom:0!important}
+  .stat-card{padding:6px 8px!important}
+  .stat-card .value{font-size:12px!important}
+  .stat-card .label{font-size:7.5px!important}
+  .stat-card:nth-child(n+3){display:none!important}
+  #evo-section{display:none!important}
+  #timeline{width:calc(100vw - 20px)!important;bottom:12px!important;padding:8px 10px!important;gap:8px!important}
+  .tl-year{font-size:18px!important;min-width:38px!important}
+  .tl-ticks{margin-top:10px!important}
+  .tl-ticks span{font-size:9px!important;padding:1px 2px!important}
+  .tl-speed{display:none!important}
+  #playBtn{width:28px!important;height:28px!important}
+}
+@media screen and (min-width:768px) and (max-width:1366px) and (pointer:coarse){
+  #panel{width:265px!important;padding:16px 14px 12px!important}
+  #panel h1{font-size:15px!important}
+  .subtitle{font-size:9px!important}
+  .stat-card .value{font-size:14px!important}
+  .mode-tab{font-size:9.5px!important;padding:6px 0!important}
+  #timeline{width:min(440px,calc(100vw - 28px))!important;padding:10px 18px!important;gap:12px!important}
+  .tl-year{font-size:22px!important;min-width:46px!important}
+}
+</style>
+</head>
+<body>
+<div id="loader"><div class="spinner"></div><p>Chargement des 393 IRIS × 7 années…</p></div>
+<div id="map"></div>
+
+<div id="device-bar">
+  <button class="dev-btn active" data-device="pc" title="Ordinateur">
+    <svg viewBox="0 0 20 20">
+      <rect x="1.5" y="2.5" width="17" height="11" rx="1.2"/>
+      <polyline points="7.5,13.5 7,17"/>
+      <polyline points="12.5,13.5 13,17"/>
+      <line x1="5.5" y1="17" x2="14.5" y2="17"/>
+    </svg>
+  </button>
+  <button class="dev-btn" data-device="tablet" title="Tablette">
+    <svg viewBox="0 0 20 20">
+      <rect x="3.5" y="1.5" width="13" height="17" rx="1.5"/>
+      <circle cx="10" cy="15.8" r="0.9" fill="currentColor" stroke="none"/>
+      <line x1="3.5" y1="13.5" x2="16.5" y2="13.5"/>
+    </svg>
+  </button>
+  <button class="dev-btn" data-device="phone" title="Téléphone">
+    <svg viewBox="0 0 20 20">
+      <rect x="5.5" y="1.5" width="9" height="17" rx="1.5"/>
+      <circle cx="10" cy="15.8" r="0.8" fill="currentColor" stroke="none"/>
+      <line x1="8" y1="3.8" x2="12" y2="3.8"/>
+    </svg>
+  </button>
+</div>
+
+<div id="timeline">
+  <button id="playBtn" title="Lecture automatique">
+    <svg id="iconPlay" viewBox="0 0 16 16"><polygon points="3,2 13,8 3,14"/></svg>
+    <svg id="iconPause" viewBox="0 0 16 16" style="display:none"><rect x="2" y="2" width="4" height="12"/><rect x="10" y="2" width="4" height="12"/></svg>
+  </button>
+  <div class="tl-year" id="yearDisplay">2022</div>
+  <div class="tl-body">
+    <div class="tl-track">
+      <div class="tl-progress" id="yearProgress"></div>
+      <input type="range" class="tl-slider" id="yearSlider" min="0" max="6" step="1" value="6">
+    </div>
+    <div class="tl-ticks" id="yearTicks"></div>
+  </div>
+  <div class="tl-speed">
+    <span class="tl-speed-label" id="speedLabel">×1</span>
+    <input type="range" class="tl-speed-slider" id="speedSlider" min="1" max="4" step="0.5" value="1">
+  </div>
+</div>
+
+<div id="panel">
+  <h1>Population de Marseille</h1>
+  <div class="subtitle">IRIS — INSEE 2016 à 2022</div>
+
+  <div class="mode-tabs">
+    <div class="mode-tab active" data-mode="pop">Population</div>
+    <div class="mode-tab" data-mode="diff">Évolution</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="label">IRIS</div><div class="value" id="s-count">—</div></div>
+    <div class="stat-card"><div class="label">Population</div><div class="value" id="s-total">—</div></div>
+    <div class="stat-card"><div class="label">Max / IRIS</div><div class="value" id="s-max">—</div></div>
+    <div class="stat-card"><div class="label">Médiane</div><div class="value" id="s-median">—</div></div>
+  </div>
+
+  <div id="evo-section" style="display:none">
+    <div class="evo-row">
+      <div class="evo-badge evo-pos"><div class="num" id="e-up">—</div><div class="txt">En hausse</div></div>
+      <div class="evo-badge evo-neg"><div class="num" id="e-down">—</div><div class="txt">En baisse</div></div>
+      <div class="evo-badge evo-eq"><div class="num" id="e-eq">—</div><div class="txt">Stable (±50)</div></div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="legend">
+    <div class="title" id="legend-title">Population</div>
+    <div class="legend-bar legend-pop" id="legend-bar"></div>
+    <div class="legend-labels" id="legend-labels"></div>
+  </div>
+
+  <div class="control-group">
+    <div class="control-group-header">
+      <label>Exagération verticale</label>
+      <span class="range-value" id="heightVal">×1.0</span>
+    </div>
+    <input type="range" class="htSlider" id="heightSlider" min="0.1" max="4" step="0.1" value="1">
+  </div>
+
+  <div class="basemap-toggle">
+    <div class="basemap-btn active" data-style="dark">Sombre</div>
+    <div class="basemap-btn" data-style="satellite">Satellite</div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+
+<script>
+// Ouverture de la fonction anonyme
+(function() {
+
+// 1. Initialisation des variables globales à partir de MARSEILLE_IRIS
+const D = MARSEILLE_IRIS;
+const R = D.records;
+const N = R.length;
+const YEARS = [2016, 2017, 2018, 2019, 2020, 2021, 2022];
+
+// 2. Calcul du maximum global (gMax) et des statistiques par année (D.stats)
+let gMax = 0;
+D.stats = {};
+
+for (const y of YEARS) {
+  const yStr = String(y);
+  let total = 0;
+  let max = 0;
+  const pops = [];
+  
+  for (let i = 0; i < N; i++) {
+    const p = R[i].p[yStr] || 0;
+    if (p > 0) {
+      total += p;
+      if (p > max) max = p;
+      if (p > gMax) gMax = p;
+      pops.push(p);
+    }
+  }
+  
+  // Tri pour calculer la médiane
+  pops.sort((a, b) => a - b);
+  const median = pops.length > 0 ? pops[Math.floor(pops.length / 2)] : 0;
+  
+  D.stats[yStr] = { count: pops.length, total: total, max: max, median: median };
+}
+
+const TILES={
+  dark:'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  satellite:{version:8,sources:{sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19}},layers:[{id:'s',type:'raster',source:'sat',minzoom:0,maxzoom:19}]}
+};
+
+// Color ramps
+// Stops alignés sur les 6 classes Jenks (t = 0, 1/6, 2/6, 3/6, 4/6, 5/6, 1)
+const RAMP_POP=[
+  [0,      [12, 2, 35, 125]],   // 0 hab  — quasi-invisible
+  [1/6,    [72,14,118, 148]],   // ~1 000 — violet profond
+  [2/6,    [172,38, 88, 163]],  // ~1 900 — magenta-cramoisi
+  [3/6,    [235,75, 35, 173]],  // ~2 450 — rouge-orangé
+  [4/6,    [255,145, 8, 183]],  // ~3 025 — ambre
+  [5/6,    [255,210,35, 193]],  // ~3 900 — jaune-orangé
+  [1,      [255,255,105,215]]   // 6 000+ — jaune vif
+];
+const RAMP_NEG=[[0,[37,99,235,180]],[.5,[96,165,250,160]],[1,[200,210,230,120]]];
+const RAMP_POS=[[0,[220,210,220,120]],[.5,[252,165,165,160]],[1,[220,38,38,180]]];
+function interp(s,t){t=Math.max(0,Math.min(1,t));for(let i=1;i<s.length;i++)if(t<=s[i][0]){const[t0,c0]=s[i-1],[t1,c1]=s[i],f=(t-t0)/(t1-t0);return c0.map((v,j)=>Math.round(v+(c1[j]-v)*f))}return s[s.length-1][1]}
+
+// Jenks Natural Breaks pré-calculés (393 IRIS × 7 années, 2016–2022)
+// Classes : [0–1000] [1000–1900] [1900–2450] [2450–3025] [3025–3900] [3900–6000]
+const JENKS_POP=[0,1000,1900,2450,3025,3900,6000];
+const NJ=JENKS_POP.length-1; // 6 classes
+
+function jenksNorm(p){
+  if(p<=0)return 0;
+  if(p>=JENKS_POP[NJ])return 1;
+  for(let i=1;i<=NJ;i++){
+    if(p<=JENKS_POP[i]){
+      const lo=JENKS_POP[i-1],hi=JENKS_POP[i];
+      return (i-1)/NJ + (1/NJ)*(p-lo)/(hi-lo);
+    }
+  }
+  return 1;
+}
+function colorPop(p){return interp(RAMP_POP,jenksNorm(p));}
+let diffMax=1;
+function colorDiff(d){if(Math.abs(d)<50)return[160,160,180,140];return d<0?interp(RAMP_NEG,Math.pow(Math.abs(d)/diffMax,.5)):interp(RAMP_POS,Math.pow(d/diffMax,.5))}
+
+// Pre-compute colors per year
+const colorsCache={};
+for(const y of YEARS){
+  const yStr=String(y);
+  const c=new Uint8Array(N*4);
+  for(let i=0;i<N;i++){
+    const p=R[i].p[yStr]||0;
+    const col=p>0?colorPop(p):[0,0,0,0];
+    c[i*4]=col[0];c[i*4+1]=col[1];c[i*4+2]=col[2];c[i*4+3]=col[3];
+  }
+  colorsCache[yStr]=c;
+}
+
+// State
+let year=2022, mode='pop', hMul=1, playTimer=null, playSpeed=1;
+
+function getElev(d,{index}){
+  if(mode==='diff'){
+    const d16=R[index].p['2016']||0, dY=R[index].p[String(year)]||0;
+    return Math.abs(dY-d16)*0.35*hMul;
+  }
+  return jenksNorm(R[index].p[String(year)]||0)*650*hMul;
+}
+function getColor(d,{index}){
+  if(mode==='diff'){
+    const d16=R[index].p['2016']||0, dY=R[index].p[String(year)]||0;
+    return colorDiff(dY-d16);
+  }
+  const a=colorsCache[String(year)];
+  const o=index*4;return[a[o],a[o+1],a[o+2],a[o+3]];
+}
+
+// Easing : ease-in-out quadratique — démarrage lent, accélère, se pose doucement
+const easeInOut=t=>t<.5?2*t*t:1-((-2*t+2)*(-2*t+2))/2;
+
+function layerTransitions(){
+  // Manuel (pas d'animation en cours) → durées cinématiques longues
+  // Lecture auto → proportionnel à l'intervalle pour ne jamais chevaucher
+  if(!playTimer) return {
+    getElevation:{duration:700, easing:easeInOut},
+    getFillColor:{duration:480}
+  };
+  const iv=Math.round(700/playSpeed); // intervalle courant en ms
+  return {
+    getElevation:{duration:Math.max(100,Math.round(iv*0.82)), easing:easeInOut},
+    getFillColor:{duration:Math.max(60, Math.round(iv*0.65))}
+  };
+}
+
+function makeLayer(){
+  return new deck.SolidPolygonLayer({
+    id:'iris-3d', data:R,
+    getPolygon:(d)=>d.poly,
+    getFillColor:getColor,
+    getElevation:getElev,
+    extruded:true, elevationScale:1,
+    material:{ambient:0.55, diffuse:0.5, shininess:8, specularColor:[30,20,20]},
+    pickable:true, autoHighlight:true, highlightColor:[255,255,255,50],
+    _normalize:true,
+    updateTriggers:{getFillColor:[mode,year], getElevation:[mode,year,hMul]},
+    transitions:layerTransitions()
+  });
+}
+
+// ── Top 5 labels (TextLayer billboard + LineLayer ancrage) ──
+function getTop5(){
+  if(mode==='diff'){
+    return [...R]
+      .filter(r=>r.p['2016']>0&&r.p[String(year)]>0&&(r.p[String(year)]-r.p['2016'])>50)
+      .sort((a,b)=>(b.p[String(year)]-b.p['2016'])-(a.p[String(year)]-a.p['2016']))
+      .slice(0,5);
+  }
+  return [...R]
+    .filter(r=>(r.p[String(year)]||0)>0)
+    .sort((a,b)=>(b.p[String(year)]||0)-(a.p[String(year)]||0))
+    .slice(0,5);
+}
+
+// Anti-collision : pousse les étiquettes proches en géographique (3 passes)
+function deconflict(items, minDist=0.008){
+  const ox=items.map(()=>0), oy=items.map(()=>0);
+  for(let pass=0;pass<3;pass++){
+    for(let i=0;i<items.length;i++){
+      for(let j=i+1;j<items.length;j++){
+        const dx=(items[j].cx+ox[j])-(items[i].cx+ox[i]);
+        const dy=(items[j].cy+oy[j])-(items[i].cy+oy[i]);
+        const d=Math.sqrt(dx*dx+dy*dy);
+        if(d>0&&d<minDist){
+          const push=(minDist-d)/2, nx=dx/d, ny=dy/d;
+          ox[i]-=nx*push; oy[i]-=ny*push;
+          ox[j]+=nx*push; oy[j]+=ny*push;
+        }
+      }
+    }
+  }
+  return items.map((_,i)=>[ox[i],oy[i]]);
+}
+
+// Calcule toutes les données Top5 une seule fois par refresh
+function getTop5Data(){
+  const top5=getTop5();
+  const offsets=deconflict(top5);
+  return top5.map((r,i)=>{
+    const p=r.p[String(year)]||0, p16=r.p['2016']||0, delta=p-p16;
+    const baseElev=mode==='diff'?Math.abs(delta)*0.35*hMul:jenksNorm(p)*650*hMul;
+    const topElev=baseElev+120+hMul*40;
+    const col=mode==='pop'?colorPop(p):colorDiff(delta);
+    const sign=delta>=0?'+':'';
+    const val=mode==='pop'
+      ?Math.round(p).toLocaleString('fr-FR')+' hab.'
+      :sign+Math.round(delta).toLocaleString('fr-FR')+' hab.';
+    return {
+      cx:r.cx, cy:r.cy, ox:offsets[i][0], oy:offsets[i][1],
+      baseElev, topElev, col,
+      text:(r.n||'IRIS')+'\n'+val
+    };
+  });
+}
+
+// Échantillonne une courbe de Bézier quadratique en N points
+function bezierSample(p0,p2,ctrl,n=12){
+  const pts=[];
+  for(let i=0;i<=n;i++){
+    const t=i/n,mt=1-t;
+    pts.push([
+      mt*mt*p0[0]+2*mt*t*ctrl[0]+t*t*p2[0],
+      mt*mt*p0[1]+2*mt*t*ctrl[1]+t*t*p2[1],
+      mt*mt*p0[2]+2*mt*t*ctrl[2]+t*t*p2[2]
+    ]);
+  }
+  return pts;
+}
+
+function makeAnchorLines(data){
+  // Centroïde des 5 étiquettes → axe de fuite pour la courbure
+  const n=data.length||1;
+  const avgX=data.reduce((s,d)=>s+d.cx+d.ox,0)/n;
+  const avgY=data.reduce((s,d)=>s+d.cy+d.oy,0)/n;
+
+  const curves=data.map(d=>{
+    const p0=[d.cx, d.cy, d.baseElev];
+    const p2=[d.cx+d.ox, d.cy+d.oy, d.topElev];
+    // Vecteur de fuite : du centroïde vers ce point → la courbe s'écarte naturellement
+    const dx=(d.cx+d.ox*0.5)-avgX, dy=(d.cy+d.oy*0.5)-avgY;
+    const len=Math.sqrt(dx*dx+dy*dy)||1e-6;
+    const push=0.0038; // ≈ 300 m de courbure latérale
+    const ctrl=[
+      (p0[0]+p2[0])/2+(dx/len)*push,
+      (p0[1]+p2[1])/2+(dy/len)*push,
+      (p0[2]+p2[2])/2
+    ];
+    return {path:bezierSample(p0,p2,ctrl,12), col:d.col};
+  });
+
+  return new deck.PathLayer({
+    id:'iris-anchors', data:curves,
+    getPath:d=>d.path,
+    getColor:d=>[d.col[0],d.col[1],d.col[2],210],
+    getWidth:1.5, widthUnits:'pixels',
+    pickable:false,
+    parameters:{depthTest:true, depthMask:false},
+    updateTriggers:{getPath:[mode,year,hMul], getColor:[mode,year]}
+  });
+}
+
+// Glow au sommet du polygone : halo large + point brillant
+// depthTest:false → toujours visible (ancre visuelle permanente)
+function makeGlow(data){
+  const upd={getPosition:[mode,year,hMul], getFillColor:[mode,year]};
+  const halo=new deck.ScatterplotLayer({
+    id:'iris-glow-halo', data,
+    getPosition:d=>[d.cx, d.cy, d.baseElev+4],
+    getRadius:95,
+    getFillColor:d=>[d.col[0],d.col[1],d.col[2],52],
+    stroked:false, pickable:false,
+    parameters:{depthTest:false},
+    updateTriggers:upd
+  });
+  const dot=new deck.ScatterplotLayer({
+    id:'iris-glow-dot', data,
+    getPosition:d=>[d.cx, d.cy, d.baseElev+4],
+    getRadius:30,
+    getFillColor:d=>[
+      Math.min(255,d.col[0]+75),
+      Math.min(255,d.col[1]+75),
+      Math.min(255,d.col[2]+75),
+      225
+    ],
+    stroked:false, pickable:false,
+    parameters:{depthTest:false},
+    updateTriggers:upd
+  });
+  return [halo, dot];
+}
+
+function makeLabels(data){
+  return new deck.TextLayer({
+    id:'iris-labels', data,
+    getPosition:d=>[d.cx+d.ox, d.cy+d.oy, d.topElev],
+    getText:d=>d.text,
+    getSize:11, sizeUnits:'pixels',
+    getColor:[255,255,255,240],
+    getTextAnchor:'middle',
+    getAlignmentBaseline:'bottom',
+    billboard:true,
+    background:true,
+    getBackgroundColor:d=>[d.col[0],d.col[1],d.col[2],40],
+    getBorderColor:d=>[d.col[0],d.col[1],d.col[2],180],
+    getBorderWidth:1,
+    backgroundPadding:[7,4,7,4],
+    fontFamily:'DM Sans, sans-serif',
+    fontWeight:500,
+    pickable:false,
+    characterSet:'auto',
+    // Occultation 3D : masquée derrière les prismes plus proches de la caméra
+    parameters:{depthTest:true, depthMask:false},
+    updateTriggers:{
+      getPosition:[mode,year,hMul],
+      getText:[mode,year],
+      getBackgroundColor:[mode,year],
+      getBorderColor:[mode,year]
+    }
+  });
+}
+
+function makeLayers(){
+  const t5=getTop5Data();
+  // Ordre : polygones → glow (toujours visible) → lignes (occultées) → étiquettes (occultées)
+  return [makeLayer(), ...makeGlow(t5), makeAnchorLines(t5), makeLabels(t5)];
+}
+
+// Map
+const map=new maplibregl.Map({
+  container:'map', style:TILES.dark,
+  center:[D.center[0],D.center[1]], zoom:11.4, pitch:50, bearing:-12, maxPitch:75, antialias:true
+});
+
+// ── Tooltip DOM custom (mis à jour en temps réel) ──
+const ttEl=document.createElement('div');
+ttEl.className='deck-tooltip';
+ttEl.style.cssText='position:fixed;display:none;pointer-events:none;z-index:20;transition:opacity .1s';
+document.body.appendChild(ttEl);
+let hoveredObject=null, ttX=0, ttY=0;
+
+function sparkHtml(r,highlightYear,baseColor){
+  const vals=YEARS.map(y=>r.p[String(y)]||0);
+  const mn=Math.min(...vals),mx=Math.max(...vals);
+  let s='<div class="tt-spark">';
+  vals.forEach((v,i)=>{
+    const h=mx>mn?((v-mn)/(mx-mn)*20+4):12;
+    const col=YEARS[i]===highlightYear?baseColor:'rgba(255,255,255,0.12)';
+    s+=`<div class="tt-spark-bar" style="height:${h}px;background:${col}"></div>`;
+  });
+  return s+'</div>';
+}
+
+function buildTooltip(r){
+  if(!r)return null;
+  if(mode==='diff'){
+    const p16=r.p['2016']||0,pY=r.p[String(year)]||0,d=pY-p16;
+    const sign=d>0?'+':'',cls=d>50?'pos':d<-50?'neg':'';
+    return `<div class="tt-diff ${cls}">${sign}${Math.round(d).toLocaleString('fr-FR')} hab.</div>
+      <div class="tt-label">évolution 2016 → ${year}</div>
+      ${r.n?'<div class="tt-name">📍 '+r.n+'</div>':''}
+      <div class="tt-row"><span class="tt-year">2016</span><span class="tt-val">${Math.round(p16).toLocaleString('fr-FR')}</span></div>
+      <div class="tt-row"><span class="tt-year">${year}</span><span class="tt-val">${Math.round(pY).toLocaleString('fr-FR')}</span></div>
+      ${sparkHtml(r,year,cls==='pos'?'#4ade80':cls==='neg'?'#f87171':'#9a9ab0')}`;
+  }
+  const p=r.p[String(year)]||0;
+  if(p===0)return null;
+  const c=colorPop(p);
+  return `<div class="tt-pop">${Math.round(p).toLocaleString('fr-FR')}</div>
+    <div class="tt-label">habitants · ${year}</div>
+    ${r.n?'<div class="tt-name">📍 '+r.n+(r.c?' — '+r.c:'')+'</div>':''}
+    ${sparkHtml(r,year,'rgb('+c[0]+','+c[1]+','+c[2]+')')}`;
+}
+
+function renderTooltip(){
+  const html=buildTooltip(hoveredObject);
+  if(!html){ttEl.style.display='none';return;}
+  ttEl.innerHTML=html;
+  const margin=12, tw=ttEl.offsetWidth||240, th=ttEl.offsetHeight||120;
+  const left=ttX+margin+tw>window.innerWidth?ttX-tw-margin:ttX+margin;
+  const top=ttY-margin-th<0?ttY+margin:ttY-margin-th;
+  ttEl.style.left=left+'px';ttEl.style.top=top+'px';
+  ttEl.style.display='block';
+}
+
+const deckOverlay=new deck.MapboxOverlay({
+  interleaved:true, layers:makeLayers(),
+  onHover:(info)=>{
+    hoveredObject=info.object||null;
+    ttX=info.x;ttY=info.y;
+    renderTooltip();
+  }
+});
+
+map.addControl(new maplibregl.NavigationControl(),'bottom-right');
+map.on('load',()=>{map.addControl(deckOverlay);setTimeout(()=>document.getElementById('loader').classList.add('hide'),400)});
+function refresh(){deckOverlay.setProps({layers:makeLayers()})}
+
+// ── Year slider ──
+const yearSlider=document.getElementById('yearSlider');
+const yearDisplay=document.getElementById('yearDisplay');
+const yearProgress=document.getElementById('yearProgress');
+const yearTicks=document.getElementById('yearTicks');
+
+YEARS.forEach((y,i)=>{
+  const s=document.createElement('span');
+  s.textContent=y; s.dataset.index=i;
+  if(y===year)s.classList.add('active');
+  s.addEventListener('click',()=>{yearSlider.value=i;updateYear()});
+  yearTicks.appendChild(s);
+});
+
+function updateYear(){
+  const idx=parseInt(yearSlider.value);
+  year=YEARS[idx];
+  yearDisplay.textContent=year;
+  const pct=(idx/(YEARS.length-1))*100;
+  yearProgress.style.width=pct+'%';
+  document.querySelectorAll('#yearTicks span').forEach((s,i)=>{
+    s.classList.toggle('active',i===idx);
+  });
+  updateDiffMax();updatePanel();refresh();renderTooltip();
+}
+
+yearSlider.addEventListener('input',()=>{stopPlay();updateYear();});
+// Initialize progress bar
+updateYear();
+
+// ── Play / Pause ──
+// playTimer et playSpeed déclarés dans le bloc State (plus haut)
+const playBtn=document.getElementById('playBtn');
+const iconPlay=document.getElementById('iconPlay');
+const iconPause=document.getElementById('iconPause');
+const speedSlider=document.getElementById('speedSlider');
+const speedLabel=document.getElementById('speedLabel');
+
+function playInterval(){return Math.round(700/playSpeed)}
+
+function tick(){
+  const next=(parseInt(yearSlider.value)+1)%YEARS.length;
+  yearSlider.value=next;updateYear();
+}
+function stopPlay(){
+  if(!playTimer)return;
+  clearInterval(playTimer);playTimer=null;
+  iconPlay.style.display='block';iconPause.style.display='none';
+}
+function startPlay(){
+  iconPlay.style.display='none';iconPause.style.display='block';
+  playTimer=setInterval(tick,playInterval());
+}
+playBtn.addEventListener('click',()=>{playTimer?stopPlay():startPlay();});
+
+speedSlider.addEventListener('input',function(){
+  playSpeed=parseFloat(this.value);
+  const label=playSpeed===Math.floor(playSpeed)?'×'+playSpeed:'×'+playSpeed.toFixed(1);
+  speedLabel.textContent=label;
+  if(playTimer){clearInterval(playTimer);playTimer=setInterval(tick,playInterval());}
+});
+
+function updateDiffMax(){
+  diffMax=Math.max(1,...R.map(r=>Math.abs((r.p[String(year)]||0)-(r.p['2016']||0))));
+}
+
+// ── Panel ──
+function updatePanel(){
+  const s=D.stats[String(year)];
+  const evo=document.getElementById('evo-section');
+  if(mode==='pop'){
+    document.getElementById('s-count').textContent=s.count;
+    document.getElementById('s-total').textContent=s.total.toLocaleString('fr-FR');
+    document.getElementById('s-max').innerHTML=Math.round(s.max).toLocaleString('fr-FR')+' <span>hab.</span>';
+    document.getElementById('s-median').innerHTML=Math.round(s.median).toLocaleString('fr-FR')+' <span>hab.</span>';
+    evo.style.display='none';
+    document.getElementById('legend-title').textContent='Population · '+year;
+    document.getElementById('legend-bar').className='legend-bar legend-pop';
+    document.getElementById('legend-labels').innerHTML='<span>0</span><span>1 000</span><span>1 900</span><span>2 450</span><span>3 025</span><span>3 900+</span>';
+  } else {
+    const diffs=R.filter(r=>r.p['2016']>0&&r.p[String(year)]>0).map(r=>(r.p[String(year)]||0)-(r.p['2016']||0));
+    const up=diffs.filter(d=>d>50).length, dn=diffs.filter(d=>d<-50).length, eq=diffs.length-up-dn;
+    const totalDelta=Math.round(diffs.reduce((a,b)=>a+b,0));
+    const sign=totalDelta>0?'+':'', cls=totalDelta<0?'down':'up';
+    document.getElementById('s-count').textContent=diffs.length;
+    document.getElementById('s-total').innerHTML=`<span class="${cls}">${sign}${totalDelta.toLocaleString('fr-FR')}</span>`;
+    document.getElementById('s-max').innerHTML='±'+Math.round(diffMax).toLocaleString('fr-FR')+' <span>hab.</span>';
+    document.getElementById('s-median').innerHTML='—';
+    evo.style.display='block';
+    document.getElementById('e-up').textContent=up;document.getElementById('e-down').textContent=dn;document.getElementById('e-eq').textContent=eq;
+    document.getElementById('legend-title').textContent='Évolution 2016 → '+year;
+    document.getElementById('legend-bar').className='legend-bar legend-diff';
+    document.getElementById('legend-labels').innerHTML='<span>−'+Math.round(diffMax).toLocaleString('fr-FR')+'</span><span>0</span><span>+'+Math.round(diffMax).toLocaleString('fr-FR')+'</span>';
+  }
+}
+
+// Events
+document.querySelectorAll('.mode-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');mode=tab.dataset.mode;updateDiffMax();updatePanel();refresh();
+  });
+});
+document.getElementById('heightSlider').addEventListener('input',function(){
+  hMul=parseFloat(this.value);document.getElementById('heightVal').textContent='×'+hMul.toFixed(1);refresh();
+});
+document.querySelectorAll('.basemap-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.basemap-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');map.setStyle(TILES[btn.dataset.style]);
+    map.once('idle',()=>{try{map.removeControl(deckOverlay)}catch(e){}map.addControl(deckOverlay);refresh();});
+  });
+});
+
+updatePanel();
+
+// ── Device layout presets ──
+const deviceViews={
+  pc:    {pitch:50,zoom:11.4},
+  tablet:{pitch:42,zoom:11.1},
+  phone: {pitch:28,zoom:10.7}
+};
+
+function detectDevice(){
+  // screen.width = résolution physique de l'écran (indépendante de la taille de fenêtre)
+  // maxTouchPoints distingue PC (0) de tablette/phone (>0)
+  const sw=window.screen?window.screen.width:window.innerWidth;
+  const touch=navigator.maxTouchPoints>0;
+  // Pas tactile → toujours PC (desktop / laptop classique)
+  if(!touch) return 'pc';
+  // Tactile + petit écran → phone
+  if(sw<768) return 'phone';
+  // Tactile + grand écran → PC (laptop tactile / écran tactile)
+  if(sw>1366) return 'pc';
+  // Tactile + écran moyen → tablette
+  return 'tablet';
+}
+
+function applyDevice(device,animate=true){
+  document.body.dataset.device=device;
+  document.querySelectorAll('.dev-btn').forEach(b=>b.classList.toggle('active',b.dataset.device===device));
+  const v=deviceViews[device];
+  const dur=animate?700:0;
+  if(map.loaded())map.easeTo({...v,duration:dur});
+  else map.once('load',()=>map.easeTo({...v,duration:dur}));
+}
+
+// Boutons : override manuel
+document.querySelectorAll('.dev-btn').forEach(btn=>btn.addEventListener('click',()=>applyDevice(btn.dataset.device)));
+
+// Détection automatique au chargement (+ rappel 150ms pour les mobiles)
+applyDevice(detectDevice(), false);
+setTimeout(()=>applyDevice(detectDevice(), false), 150);
+
+// Ré-adaptation au redimensionnement (debounce 200 ms)
+let _resizeTimer;
+window.addEventListener('resize',()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer=setTimeout(()=>applyDevice(detectDevice()),200);
+});
+})();
+</script>
+</body>
+</html>
